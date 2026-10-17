@@ -7,6 +7,9 @@ from io import StringIO
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from intelligence_engine import run_free_council
+from history_store import save_session, list_sessions
+from three_scene import render_3d_core
 
 st.set_page_config(page_title="AI Council | Intelligence Lab", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
 
@@ -154,7 +157,7 @@ if "runs" not in st.session_state:
 with st.sidebar:
     st.markdown("<div style='display:flex;align-items:center;gap:12px;margin:8px 0 30px'><div style='width:42px;height:42px;border:1px solid rgba(99,244,232,.55);border-radius:13px;display:grid;place-items:center;color:#63f4e8;font-size:24px;box-shadow:0 0 25px rgba(99,244,232,.13)'>◈</div><div><div style='font:700 17px Space Grotesk'>AI COUNCIL</div><div style='font:10px DM Mono;color:#8492b1;letter-spacing:.15em'>INTELLIGENCE LAB</div></div></div>", unsafe_allow_html=True)
     st.markdown("<div class='section-kicker'>Workspace</div>", unsafe_allow_html=True)
-    page = st.radio("Navigation", ["Overview", "Debate Studio", "Intelligence Report", "Agent Network"], label_visibility="collapsed")
+    page = st.radio("Navigation", ["Overview", "Debate Studio", "Intelligence Report", "Session History", "Agent Network"], label_visibility="collapsed")
     st.markdown("---")
     st.markdown("<div class='section-kicker'>System status</div>", unsafe_allow_html=True)
     st.markdown("<div class='glass' style='padding:14px;border-radius:15px'><span style='color:#b8f36b'>●</span> <b>Demo engine online</b><div style='font-size:12px;color:#8997b6;margin-top:7px'>No API key required · Local simulation</div></div>", unsafe_allow_html=True)
@@ -175,7 +178,7 @@ if page == "Overview":
             st.session_state.debate_result = st.session_state.debate_result
             st.rerun()
     with right:
-        st.markdown("<div class='orbit-wrap'><div class='core'><div class='core-glyph'>◈</div></div></div>", unsafe_allow_html=True)
+        render_3d_core(height=300)
         st.markdown("<div style='text-align:center;font:10px DM Mono;letter-spacing:.2em;color:#8290b2'>REASONING CORE // ACTIVE</div>", unsafe_allow_html=True)
     st.write("")
     m1,m2,m3,m4=st.columns(4)
@@ -208,8 +211,9 @@ elif page == "Debate Studio":
         if len(topic.strip())<10:
             st.warning("Add a clear question with at least 10 characters to convene the council.")
         else:
-            with st.spinner("Convening agents · mapping arguments · synthesizing verdict…"):
-                st.session_state.debate_result=make_debate(topic,rounds,context)
+            with st.spinner("Scanning public search results · convening structured agents · synthesizing a provisional verdict…"):
+                st.session_state.debate_result=run_free_council(topic,rounds,context)
+                save_session(st.session_state.debate_result)
                 st.session_state.runs+=1
     data=st.session_state.debate_result
     if data:
@@ -226,6 +230,14 @@ elif page == "Debate Studio":
         st.markdown(f"<div class='glass' style='border-color:rgba(184,243,107,.3)'><div class='section-kicker' style='color:#b8f36b'>◈ Judge's synthesis</div><div class='section-title'>A balanced verdict</div><p style='font-size:15px;line-height:1.85'>{data['verdict']}</p><div class='pill'>Heuristic confidence indicator: {data['confidence']}%</div><p style='font-size:11px;margin-top:12px'>This score is a demo heuristic, not a calibrated probability or verified assessment.</p></div>",unsafe_allow_html=True)
         st.markdown("#### Claim review")
         st.dataframe(pd.DataFrame(data["claims"]),use_container_width=True,hide_index=True)
+        st.markdown("#### Research sources")
+        st.caption(data.get("research_status", "Structured demo mode"))
+        sources = data.get("sources", [])
+        if sources:
+            for source in sources:
+                st.markdown("- [" + source["title"] + "](" + source["url"] + ")  \\n  " + source.get("snippet", ""))
+        else:
+            st.info("No search results were returned. This is a structured reasoning demo, not verified live research.")
         st.download_button("↓  Export intelligence brief (.md)",report_markdown(data),file_name="ai_council_brief.md",mime="text/markdown")
 
 elif page == "Intelligence Report":
@@ -250,6 +262,20 @@ elif page == "Intelligence Report":
         st.markdown("#### Unresolved questions")
         st.markdown("- What independent evidence would change the verdict?\n- Which assumptions are most sensitive to local context?\n- What is the smallest safe experiment that can test the claim?")
         st.download_button("↓  Download full report",report_markdown(data),file_name="ai_council_intelligence_report.md",mime="text/markdown")
+
+elif page == "Session History":
+    st.markdown("<div class='section-kicker'>Persistent memory / 04</div><div class='section-title'>Previous council sessions</div>", unsafe_allow_html=True)
+    sessions = list_sessions()
+    if not sessions:
+        st.info("No saved sessions yet. Run a debate to create your first history entry.")
+    else:
+        st.caption(f"{len(sessions)} saved session(s). Hosted ephemeral storage may reset when the app restarts.")
+        for session in sessions:
+            with st.expander(f"#{session['id']} · {session['topic']} · {session['created_at'][:19]}"):
+                st.write(session["verdict"])
+                if st.button("Load this session", key=f"load_{session['id']}"):
+                    st.session_state.debate_result = session["payload"]
+                    st.success("Loaded. Open Intelligence Report to review it.")
 
 elif page == "Agent Network":
     st.markdown("<div class='section-kicker'>System architecture / 03</div><div class='section-title'>The council, under the hood.</div>",unsafe_allow_html=True)
